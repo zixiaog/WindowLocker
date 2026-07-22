@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# Flet 运行时缓存和第三方库
+.flet_cache/
+libs/
+
+# 日志
+logs/
+*.log
+
+# PyInstaller 打包输出
+build/
+dist/
+*.spec.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+.DS_Store
