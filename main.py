@@ -524,12 +524,17 @@ class WindowLockerApp:
         tk.Label(text_frame, text=proc_name, font=("Consolas", 8),
                  fg=proc_color, bg=card_bg, anchor="w").pack(fill=tk.X)
 
-        # 置顶标记
+        # 置顶标记（带圆形背景的醒目图钉）
         pin_label = None
         if window.pinned:
-            pin_label = tk.Label(inner, text="\U0001F4CC", font=("Segoe UI Emoji", 10),
-                                 bg=card_bg, fg=title_color)
-            pin_label.pack(side=tk.RIGHT, padx=(4, 0))
+            pin_bg = "#FFD54F" if side_name == "unlocked" else "#FFB300"
+            pin_frame = tk.Frame(inner, bg=pin_bg, width=22, height=22)
+            pin_frame.pack(side=tk.RIGHT, padx=(4, 0))
+            pin_frame.pack_propagate(False)
+            pin_label = tk.Label(pin_frame, text="\U0001F4CC",
+                                 font=("Segoe UI Emoji", 12),
+                                 bg=pin_bg, fg="#5D4037")
+            pin_label.pack(expand=True)
 
         # 点击事件 + hover效果
         def _on_click(e):
@@ -733,17 +738,22 @@ class WindowLockerApp:
             if card_info['pin_label'] is None:
                 side_name = card_info['side_name']
                 card_bg = card_info['inner']['bg']
-                is_selected = (card_bg == C_ACCENT2)
-                title_color = "white" if is_selected else (
-                    C_TEXT if side_name == "unlocked" else "#A5D6A7")
-                pin_label = tk.Label(card_info['inner'], text="\U0001F4CC",
-                                     font=("Segoe UI Emoji", 10),
-                                     bg=card_bg, fg=title_color)
-                pin_label.pack(side=tk.RIGHT, padx=(4, 0))
+                pin_bg = "#FFD54F" if side_name == "unlocked" else "#FFB300"
+                pin_frame = tk.Frame(card_info['inner'], bg=pin_bg, width=22, height=22)
+                pin_frame.pack(side=tk.RIGHT, padx=(4, 0))
+                pin_frame.pack_propagate(False)
+                pin_label = tk.Label(pin_frame, text="\U0001F4CC",
+                                     font=("Segoe UI Emoji", 12),
+                                     bg=pin_bg, fg="#5D4037")
+                pin_label.pack(expand=True)
                 card_info['pin_label'] = pin_label
         else:
             if card_info['pin_label'] is not None:
+                # 销毁整个父容器（pin_frame），避免遗留空 Frame
+                parent_widget = card_info['pin_label'].master
                 card_info['pin_label'].destroy()
+                if parent_widget and parent_widget.winfo_exists():
+                    parent_widget.destroy()
                 card_info['pin_label'] = None
 
     # ─── 窗口显示/隐藏 ──────────────────────────────────────

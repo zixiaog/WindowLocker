@@ -51,6 +51,9 @@ class WindowManager:
         # 存储置顶的窗口集合: {hwnd}
         self._pinned_windows: set = set()
         
+        # 存储置顶窗口的进程名+标题，用于hwnd变化后保持置顶状态
+        self._pinned_keys: set = set()
+        
         # 设置函数原型
         self._setup_apis()
     
@@ -235,6 +238,9 @@ class WindowManager:
                                 self._locked_windows[hwnd].hwnd = hwnd
                                 del self._locked_windows[old_hwnd]
                     
+                    # 检查是否已置顶（hwnd 或 key 匹配）
+                    pinned = hwnd in self._pinned_windows or self._is_window_pinned_by_key(process_name, title)
+                    
                     info = WindowInfo(
                         hwnd=hwnd,
                         title=title,
@@ -244,7 +250,7 @@ class WindowManager:
                         locked=locked,
                         locked_size=locked_size,
                         locked_pos=locked_pos,
-                        pinned=hwnd in self._pinned_windows
+                        pinned=pinned
                     )
                     windows.append(info)
             except:
@@ -608,7 +614,31 @@ class WindowManager:
                 old_info.hwnd = new_hwnd
                 self._locked_windows[new_hwnd] = old_info
                 logger.debug(f"迁移锁定: {old_hwnd} -> {new_hwnd}")
-                
+
+                # 检查旧窗口是否置顶过，如有则对新窗口自动恢复置顶
+                try:
+                    was_pinned = (
+                        old_hwnd in self._pinned_windows
+                        or self._is_window_pinned_by_key(old_info.process_name, old_info.title)
+                    )
+                    if was_pinned and self.user32.IsWindow(new_hwnd):
+                        self._pinned_windows.discard(old_hwnd)
+                        self._pinned_windows.add(new_hwnd)
+                        HWND_TOPMOST = wintypes.HWND(-1)
+                        SWP_NOMOVE = 0x0002
+                        SWP_NOSIZE = 0x0001
+                        SWP_SHOWWINDOW = 0x0040
+                        pin_result = self.user32.SetWindowPos(
+                            wintypes.HWND(new_hwnd), HWND_TOPMOST, 0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                        )
+                        if pin_result:
+                            logger.debug(f"迁移后自动恢复置顶: {old_hwnd} -> {new_hwnd}")
+                        else:
+                            logger.warning(f"迁移后置顶失败: {new_hwnd:#x}")
+                except Exception as pin_err:
+                    logger.debug(f"迁移后置顶异常: {pin_err}")
+
                 # 重新应用样式锁定
                 try:
                     GWL_STYLE = -16
@@ -670,19 +700,30 @@ class WindowManager:
         try:
             if not self.user32.IsWindow(hwnd):
                 return False
-            HWND_TOPMOST = -1
+            HWND_TOPMOST = wintypes.HWND(-1)
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
             SWP_SHOWWINDOW = 0x0040
             result = self.user32.SetWindowPos(
-                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                wintypes.HWND(hwnd), HWND_TOPMOST, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
             )
             if result:
                 self._pinned_windows.add(hwnd)
+                # 同时保存 key 用于 hwnd 变化后的恢复
+                try:
+                    key = (self._get_process_name(hwnd).lower(), self._get_window_title(hwnd).lower())
+                    self._pinned_keys.add(key)
+                except:
+                    pass
+                logger.debug(f"置顶成功: hwnd={hwnd:#x}")
                 return True
-            return False
-        except:
+            else:
+                err = ctypes.get_last_error() if hasattr(ctypes, 'get_last_error') else 0
+                logger.warning(f"SetWindowPos 置顶失败: hwnd={hwnd:#x}, err={err}")
+                return False
+        except Exception as e:
+            logger.error(f"置顶窗口异常: {e}", exc_info=True)
             return False
     
     def unpin_window(self, hwnd: int) -> bool:
@@ -690,21 +731,41 @@ class WindowManager:
         try:
             if not self.user32.IsWindow(hwnd):
                 return False
-            HWND_NOTOPMOST = -2
+            HWND_NOTOPMOST = wintypes.HWND(-2)
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
             SWP_SHOWWINDOW = 0x0040
             result = self.user32.SetWindowPos(
-                hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                wintypes.HWND(hwnd), HWND_NOTOPMOST, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
             )
+            self._pinned_windows.discard(hwnd)
+            # 同时移除 key
+            try:
+                key = (self._get_process_name(hwnd).lower(), self._get_window_title(hwnd).lower())
+                self._pinned_keys.discard(key)
+            except:
+                pass
             if result:
-                self._pinned_windows.discard(hwnd)
+                logger.debug(f"取消置顶成功: hwnd={hwnd:#x}")
                 return True
             return False
-        except:
+        except Exception as e:
+            logger.error(f"取消置顶异常: {e}", exc_info=True)
             return False
     
     def is_window_pinned(self, hwnd: int) -> bool:
         """检查窗口是否已置顶"""
-        return hwnd in self._pinned_windows
+        if hwnd in self._pinned_windows:
+            return True
+        # 兼容 hwnd 变化后的判定
+        try:
+            return self._is_window_pinned_by_key(
+                self._get_process_name(hwnd), self._get_window_title(hwnd)
+            )
+        except Exception:
+            return False
+    
+    def _is_window_pinned_by_key(self, process_name: str, title: str) -> bool:
+        """通过进程名+标题检查窗口是否已置顶"""
+        return (process_name.lower(), title.lower()) in self._pinned_keys
