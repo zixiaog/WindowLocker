@@ -399,9 +399,12 @@ class WindowLockerApp:
         content = tk.Frame(parent, bg=C_BG)
         content.pack(fill=tk.BOTH, expand=True, padx=8, pady=(6, 0))
 
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=1)
+
         # ── 左列：未锁定 ──
         left = tk.Frame(content, bg=C_BG)
-        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 3))
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 3))
 
         # 表头
         lh = tk.Frame(left, bg=C_BG3, height=32)
@@ -417,12 +420,9 @@ class WindowLockerApp:
         self._unlocked_canvas, self._unlocked_inner = self._create_card_list(left, C_BG2)
         self._unlocked_card_refs = []
 
-        # ── 分隔线 ──
-        tk.Frame(content, bg=C_BORDER, width=1).pack(side=tk.LEFT, fill=tk.Y, padx=3)
-
         # ── 右列：已锁定 ──
         right = tk.Frame(content, bg=C_BG)
-        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(3, 0))
+        right.grid(row=0, column=1, sticky="nsew", padx=(3, 0))
 
         # 表头
         rh = tk.Frame(right, bg=C_GREEN_HD, height=32)
